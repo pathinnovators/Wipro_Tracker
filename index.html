@@ -1,208 +1,158 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wipro Tracker - Fixed</title>
+<meta charset="UTF-8">
+<title>Wipro Tracker - Fixed Version</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 
 <style>
-body { font-family: Arial; background:#f5f5f5; padding:20px; }
-table { width:100%; border-collapse: collapse; background:white; margin-bottom:20px; }
-th,td { border:1px solid #ddd; padding:8px; text-align:center; }
-th { background:#067d28; color:white; }
-input,select { width:100%; padding:5px; }
-
-.section { margin-bottom:25px; }
+body { font-family: Poppins; background:#f5f6fa; padding:20px;}
+h1{text-align:center;}
+table{width:100%;border-collapse:collapse;margin-top:20px;background:#fff;}
+th,td{border:1px solid #ddd;padding:8px;text-align:center;}
+th{background:#2ecc71;color:white;}
+button{padding:8px 15px;margin:5px;cursor:pointer;}
 </style>
 </head>
 
 <body>
 
-<h2>📊 WIPRO TRACKER</h2>
+<h1>📊 Wipro Tracker (Fixed)</h1>
 
-<select id="monthDropdown" onchange="calculateSummary()">
-<option>Mar 2026</option>
-<option>Apr 2026</option>
-<option>May 2026</option>
-<option>Jun 2026</option>
-</select>
+<select id="monthDropdown"></select>
 
-<!-- SUMMARY -->
-<div class="section">
-<h3>📅 Monthly Summary</h3>
+<div>
+<button onclick="addRow()">Add Row</button>
+<button onclick="saveData()">Save</button>
+<button onclick="exportExcel()">Export Excel</button>
+</div>
+
 <table>
-<tr><td>Total Candidates</td><td id="sum_candidates">0</td></tr>
-<tr><td>Offer Released</td><td id="sum_offerReleased">0</td></tr>
-<tr><td>Offer Pending</td><td id="sum_offerPending">0</td></tr>
-<tr><td>Total Profile Payment</td><td id="sum_profilePayment">₹0</td></tr>
-<tr><td>Total Advance</td><td id="sum_advance">₹0</td></tr>
-<tr><td>Total Paid</td><td id="sum_paid">₹0</td></tr>
-<tr><td>Pending</td><td id="sum_pending">₹0</td></tr>
-</table>
-</div>
-
-<!-- CANDIDATES -->
-<div class="section">
-<h3>👥 Candidates</h3>
-<table id="candidateTable">
 <thead>
 <tr>
-<th>Name</th><th>Date</th><th>Status</th><th>Payment</th>
+<th>#</th>
+<th>Name</th>
+<th>Date</th>
+<th>Payment</th>
 </tr>
 </thead>
-<tbody></tbody>
-</table>
-<button onclick="addCandidate()">Add Row</button>
-</div>
 
-<!-- ADVANCE -->
-<div class="section">
-<h3>💰 Advance</h3>
-<table id="advanceTable">
-<thead>
-<tr>
-<th>Amount</th><th>Date</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
-<button onclick="addAdvance()">Add Row</button>
-</div>
+<tbody id="tbody"></tbody>
 
-<!-- PAYMENT -->
-<div class="section">
-<h3>💳 Payments</h3>
-<table id="paymentTable">
-<thead>
+<tfoot>
 <tr>
-<th>Amount</th><th>Date</th>
+<td colspan="3"><b>Total</b></td>
+<td id="total">0</td>
 </tr>
-</thead>
-<tbody></tbody>
+</tfoot>
+
 </table>
-<button onclick="addPayment()">Add Row</button>
-</div>
 
 <script>
+// ================= FIREBASE =================
+const firebaseConfig = {
+apiKey: "AIzaSyA0ze6n4ERhn4Bi6_PT6bA3z3h9NOEc_5M",
+authDomain: "wipro-tracker-bdc7d.firebaseapp.com",
+databaseURL: "https://wipro-tracker-bdc7d-default-rtdb.asia-southeast1.firebasedatabase.app/",
+projectId: "wipro-tracker-bdc7d",
+};
 
-// SAFE NUMBER
-function num(v){ return parseFloat(v)||0; }
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-// MONTH CHECK
-function isSameMonth(dateStr, selectedMonth){
- if(!dateStr) return false;
- const d=new Date(dateStr);
- const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
- return `${m[d.getMonth()]} ${d.getFullYear()}`===selectedMonth;
+// ================= GLOBAL =================
+let currentMonth = "";
+let data = [];
+
+// ================= MONTH =================
+function loadMonths(){
+const months = ["Mar 2026","Apr 2026","May 2026","Jun 2026"];
+const dd = document.getElementById("monthDropdown");
+
+dd.innerHTML = months.map(m=>`<option>${m}</option>`).join("");
+currentMonth = months[0];
+loadData();
 }
 
-// COLLECT DATA
-function getCandidates(){
- let data=[];
- document.querySelectorAll("#candidateTable tbody tr").forEach(tr=>{
-   let t=tr.querySelectorAll("input,select");
-   data.push({
-     date:t[1].value,
-     status:t[2].value,
-     pay:t[3].value
-   });
- });
- return data;
+document.getElementById("monthDropdown").onchange = function(){
+currentMonth = this.value;
+loadData();
+};
+
+// ================= TABLE =================
+function render(){
+const tb = document.getElementById("tbody");
+tb.innerHTML = "";
+
+data.forEach((row,i)=>{
+const tr = document.createElement("tr");
+
+tr.innerHTML = `
+<td>${i+1}</td>
+<td><input value="${row.name}" onchange="update(${i},'name',this.value)"></td>
+<td><input type="date" value="${row.date}" onchange="update(${i},'date',this.value)"></td>
+<td><input type="number" value="${row.payment}" onchange="update(${i},'payment',this.value)"></td>
+`;
+
+tb.appendChild(tr);
+});
+
+calcTotal();
 }
 
-function getAdvance(){
- let data=[];
- document.querySelectorAll("#advanceTable tbody tr").forEach(tr=>{
-   let t=tr.querySelectorAll("input");
-   data.push({ amt:t[0].value, date:t[1].value });
- });
- return data;
+function update(i,key,val){
+data[i][key]=val;
+calcTotal();
 }
 
-function getPayment(){
- let data=[];
- document.querySelectorAll("#paymentTable tbody tr").forEach(tr=>{
-   let t=tr.querySelectorAll("input");
-   data.push({ amt:t[0].value, date:t[1].value });
- });
- return data;
+function calcTotal(){
+let t=0;
+data.forEach(r=> t += Number(r.payment||0));
+document.getElementById("total").innerText = t;
 }
 
-// MAIN CALCULATION
-function calculateSummary(){
-
- let month=document.getElementById("monthDropdown").value;
-
- let candidates=getCandidates().filter(c=>isSameMonth(c.date,month));
- let advances=getAdvance().filter(a=>isSameMonth(a.date,month));
- let payments=getPayment().filter(p=>isSameMonth(p.date,month));
-
- let totalCandidates=candidates.length;
-
- let offerReleased=0, offerPending=0, profile=0;
-
- candidates.forEach(c=>{
-   if(c.status==="Offer Released"){
-     offerReleased++;
-     profile+=num(c.pay);
-   }
-   if(c.status==="Offer Pending"){
-     offerPending++;
-   }
- });
-
- let advance=advances.reduce((s,a)=>s+num(a.amt),0);
- let paid=payments.reduce((s,p)=>s+num(p.amt),0);
-
- let pending=profile-paid;
-
- // UPDATE UI
- document.getElementById("sum_candidates").innerText=totalCandidates;
- document.getElementById("sum_offerReleased").innerText=offerReleased;
- document.getElementById("sum_offerPending").innerText=offerPending;
- document.getElementById("sum_profilePayment").innerText="₹"+profile;
- document.getElementById("sum_advance").innerText="₹"+advance;
- document.getElementById("sum_paid").innerText="₹"+paid;
- document.getElementById("sum_pending").innerText="₹"+pending;
+// ================= CRUD =================
+function addRow(){
+data.push({name:"",date:"",payment:0});
+render();
 }
 
-// ADD ROWS
-function addCandidate(){
- let tr=document.createElement("tr");
- tr.innerHTML=`
-<td><input></td>
-<td><input type="date" onchange="calculateSummary()"></td>
-<td>
-<select onchange="calculateSummary()">
-<option>Offer Released</option>
-<option>Offer Pending</option>
-</select>
-</td>
-<td><input type="number" oninput="calculateSummary()"></td>`;
- document.querySelector("#candidateTable tbody").appendChild(tr);
+function saveData(){
+db.ref("tracker/"+currentMonth).set(data);
+localStorage.setItem(currentMonth,JSON.stringify(data));
+alert("Saved!");
 }
 
-function addAdvance(){
- let tr=document.createElement("tr");
- tr.innerHTML=`
-<td><input type="number" oninput="calculateSummary()"></td>
-<td><input type="date" onchange="calculateSummary()"></td>`;
- document.querySelector("#advanceTable tbody").appendChild(tr);
+async function loadData(){
+let local = localStorage.getItem(currentMonth);
+
+if(local){
+data = JSON.parse(local);
+render();
+}else{
+const snap = await db.ref("tracker/"+currentMonth).once("value");
+data = snap.val() || [];
+render();
+}
 }
 
-function addPayment(){
- let tr=document.createElement("tr");
- tr.innerHTML=`
-<td><input type="number" oninput="calculateSummary()"></td>
-<td><input type="date" onchange="calculateSummary()"></td>`;
- document.querySelector("#paymentTable tbody").appendChild(tr);
+// ================= EXPORT =================
+function exportExcel(){
+const ws = XLSX.utils.json_to_sheet(data);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,ws,"Sheet1");
+XLSX.writeFile(wb,"tracker.xlsx");
 }
 
-// INIT
-addCandidate(); addCandidate();
-addAdvance();
-addPayment();
-
+// ================= INIT =================
+loadMonths();
 </script>
 
 </body>
